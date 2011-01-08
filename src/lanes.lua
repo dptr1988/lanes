@@ -39,12 +39,10 @@ THE SOFTWARE.
 ===============================================================================
 ]]--
 
-module( "lanes", package.seeall )
+local M = {}
 
-require "lua51-lanes"
-assert( type(lanes)=="table" )
-
-local mm= lanes
+local mm = require "lua51-lanes"
+assert( type(mm)=="table" )
 
 local linda_id=    assert( mm.linda_id )
 
@@ -85,7 +83,7 @@ local error= assert( error )
 local setmetatable= assert( setmetatable )
 local rawget= assert( rawget )
 
-ABOUT= 
+local ABOUT=
 {
     author= "Asko Kauppi <akauppi@gmail.com>",
     description= "Running multiple Lua states in parallel",
@@ -93,6 +91,7 @@ ABOUT=
     copyright= "Copyright (c) 2007-10, Asko Kauppi",
     version= _version,
 }
+M.ABOUT = ABOUT
 
 
 -- Making copies of necessary system libs will pass them on as upvalues;
@@ -242,7 +241,7 @@ local valid_libs= {
     ["*"]= true
 }
 
-function gen( ... )
+local function gen( ... )
     local opt= {}
     local libs= nil
     local lev= 2  -- level for errors
@@ -307,6 +306,7 @@ function gen( ... )
                                              ... ) )     -- args
            end
 end
+M.gen = gen
 
 lane_proxy= function( ud )
     local proxy= {
@@ -337,11 +337,12 @@ end
 -----
 -- linda_ud= lanes.linda()
 --
-function linda()
+local function linda()
     local proxy= _deep_userdata( linda_id )
     assert( (type(proxy) == "userdata") and getmetatable(proxy) )
     return proxy
 end
+M.linda = linda
 
 
 ---=== Timers ===---
@@ -535,7 +536,7 @@ end
 -----
 -- = timer( linda_h, key_val, date_tbl|first_secs [,period_secs] )
 --
-function timer( linda, key, a, period )
+local function timer( linda, key, a, period )
 
     if a==0.0 then
         -- Caller expects to get current time stamp in Linda, on return
@@ -558,6 +559,7 @@ function timer( linda, key, a, period )
     --
     timer_gateway:send( TGW_KEY, linda, key, wakeup_at, period )
 end
+M.timer = timer
 
 
 ---=== Lock & atomic generators ===---
@@ -575,7 +577,7 @@ end
 -- Returns an access function that allows 'N' simultaneous entries between
 -- acquire (+M) and release (-M). For binary locks, use M==1.
 --
-function genlock( linda, key, N )
+local function genlock( linda, key, N )
     linda:limit(key,N)
     linda:set(key,nil)  -- clears existing data
 
@@ -598,6 +600,7 @@ function genlock( linda, key, N )
         end
     end
 end
+M.genlock = genlock
 
 
 --
@@ -608,7 +611,7 @@ end
 -- Returns an access function that allows atomic increment/decrement of the
 -- number in 'key'.
 --
-function genatomic( linda, key, initial_val )
+local function genatomic( linda, key, initial_val )
     linda:limit(key,2)          -- value [,true]
     linda:set(key,initial_val or 0.0)   -- clears existing data (also queue)
 
@@ -621,6 +624,8 @@ function genatomic( linda, key, initial_val )
         return val
     end
 end
+M.genatomic = genatomic
 
 
+return M
 --the end
