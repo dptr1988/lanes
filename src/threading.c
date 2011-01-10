@@ -178,6 +178,11 @@ static void prepare_timeout( struct timespec *ts, time_d abs_secs ) {
 
     ts->tv_sec= floor( abs_secs );
     ts->tv_nsec= ((long)((abs_secs - ts->tv_sec) * 1000.0 +0.5)) * 1000000UL;   // 1ms = 1000000ns
+    if (ts->tv_nsec == 1000000000UL)
+    {
+        ts->tv_nsec = 0;
+        ts->tv_sec = ts->tv_sec + 1;
+    }
 }
 #endif
 

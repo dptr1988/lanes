@@ -4,6 +4,7 @@
  * Multithreading in Lua.
  * 
  * History:
+ *      3-Jan-11  (2.0.10): linda_send bugfix, was waiting on the wrong signal
  *      3-Dec-10  (2.0.9): Added support to generate a lane from a string
  *      2-Dec-10  (2.0.8): Fix LuaJIT2 incompatibility (no 'tostring' hijack anymore)
  *      ????????  (2.0.7): Fixed 'memory leak' in some situations where a free running
@@ -63,7 +64,7 @@
  *      ...
  */
 
-const char *VERSION= "2.0.9";
+const char *VERSION= "2.0.10";
 
 /*
 ===============================================================================
@@ -529,7 +530,7 @@ STACK_MID(KL,0)
         prev_status = s->status;
         s->status = WAITING;
     }
-    if (!SIGNAL_WAIT( &linda->write_happened, &K->lock_, timeout )) {
+    if (!SIGNAL_WAIT( &linda->read_happened, &K->lock_, timeout )) {
         if (s) { s->status = prev_status; }
         break;
     }
@@ -1239,7 +1240,7 @@ static int lane_error( lua_State *L ) {
 }
 #endif
 
-#if defined PLATFORM_WIN32
+#if defined PLATFORM_WIN32  && !defined __GNUC__
 //see http://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx
 #define MS_VC_EXCEPTION 0x406D1388
 #pragma pack(push,8)
@@ -1284,7 +1285,7 @@ void SetThreadName( DWORD dwThreadID, char* threadName)
     lua_State *L= s->L;
 
  
-#if defined PLATFORM_WIN32
+#if defined PLATFORM_WIN32  && !defined __GNUC__
 	SetThreadName(-1, s->threadName);
 #endif
 

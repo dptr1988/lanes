@@ -312,9 +312,10 @@ lane_proxy= function( ud )
     local proxy= {
         _ud= ud,
         
-        -- void= me:cancel()
+        -- true|false= me:cancel()
         --
-        cancel= function(me, time, force) thread_cancel(me._ud, time, force) end,
+        cancel= function(me, time, force) return thread_cancel(me._ud, time, force) end,
+
         
         -- [...] | [nil,err,stack_tbl]= me:join( [wait_secs=-1] )
         --
@@ -512,7 +513,11 @@ if first_time then
 
             -- Sleep until next timer to wake up, or a set/clear command
             --
-            local secs= next_wakeup and (next_wakeup - now_secs()) or nil
+            local secs
+            if next_wakeup then
+                secs =  next_wakeup - now_secs()
+                if secs < 0 then secs = 0 end
+            end
             local linda= timer_gateway:receive( secs, TGW_KEY )
 
             if linda then

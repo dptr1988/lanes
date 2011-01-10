@@ -3,6 +3,14 @@ CHANGES:
 
 CHANGE X:
 
+CHANGE 21 (bugfixes) BGe 3-Jan-2011:
+    Several fixes by Martin Krpan:
+    - linda_send was waiting on the wrong signal
+    - buildfix when using i586-mingw32msvc-gcc cross compiler
+    - lanes_h:cancel() returns a boolean as it should
+    - timers could get blocked sometimes because they were initialized with negative values
+    - prepare_timeout could generate an illegal setting
+
 CHANGE 20 BGe 3-Dec-2010:
     Enable to specify a string as lane code instead of a function so that we dont use lua_dump, which
     isn't supported by LuaJIT.
