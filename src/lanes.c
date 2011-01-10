@@ -4,6 +4,9 @@
  * Multithreading in Lua.
  * 
  * History:
+ *      2-Dec-10  (2.0.8): Fix LuaJIT2 incompatibility (no 'tostring' hijack anymore)
+ *      ????????  (2.0.7): Fixed 'memory leak' in some situations where a free running
+ *                  lane is collected before application shutdown
  *      24-Aug-10 (2.0.6): Mem fixes, argument checking (lua_toLinda result), thread name
  *      24-Jun-09 (2.0.4): Made friendly to already multithreaded host apps.
  *      20-Oct-08 (2.0.2): Added closing of free-running threads, but it does
@@ -59,7 +62,7 @@
  *      ...
  */
 
-const char *VERSION= "2.0.6";
+const char *VERSION= "2.0.8";
 
 /*
 ===============================================================================

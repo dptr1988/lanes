@@ -3,6 +3,9 @@ CHANGES:
 
 CHANGE X:
 
+CHANGE 19 BGe 2-Dec-2010:
+    No longer rely on global function 'tostring' to generate unique identifiers when caching data being transfered through la linda. Should fix a compatilibity issue with LuaJIT2.
+
 CHANGE 18 BGe 6-Oct-2010:
     Fixed 'memory leak' in some situations where a free running lane is collected before application shutdown
 	A bit of code cleanup
