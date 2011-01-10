@@ -4,6 +4,7 @@
  * Multithreading in Lua.
  * 
  * History:
+ *      3-Dec-10  (2.0.9): Added support to generate a lane from a string
  *      2-Dec-10  (2.0.8): Fix LuaJIT2 incompatibility (no 'tostring' hijack anymore)
  *      ????????  (2.0.7): Fixed 'memory leak' in some situations where a free running
  *                  lane is collected before application shutdown
@@ -62,12 +63,12 @@
  *      ...
  */
 
-const char *VERSION= "2.0.8";
+const char *VERSION= "2.0.9";
 
 /*
 ===============================================================================
 
-Copyright (C) 2007-08 Asko Kauppi <akauppi@gmail.com>
+Copyright (C) 2007-10 Asko Kauppi <akauppi@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1412,129 +1413,144 @@ void SetThreadName( DWORD dwThreadID, char* threadName)
 //
 LUAG_FUNC( thread_new )
 {
-    lua_State *L2;
-    struct s_lane *s;
-    struct s_lane **ud;
-    const char *threadName = 0;
+	lua_State *L2;
+	struct s_lane *s;
+	struct s_lane **ud;
+	const char *threadName = 0;
 
-    const char *libs= lua_tostring( L, 2 );
-    uint_t cs= luaG_optunsigned( L, 3,0);
-    int prio= (int)luaL_optinteger( L, 4,0);
-    uint_t glob= luaG_isany(L,5) ? 5:0;
+	const char *libs= lua_tostring( L, 2 );
+	uint_t cs= luaG_optunsigned( L, 3,0);
+	int prio= (int)luaL_optinteger( L, 4,0);
+	uint_t glob= luaG_isany(L,5) ? 5:0;
 
-    #define FIXED_ARGS (5)
-    uint_t args= lua_gettop(L) - FIXED_ARGS;
+#define FIXED_ARGS (5)
+	uint_t args= lua_gettop(L) - FIXED_ARGS;
 
-    if (prio < THREAD_PRIO_MIN || prio > THREAD_PRIO_MAX) {
-        luaL_error( L, "Priority out of range: %d..+%d (%d)", 
-                            THREAD_PRIO_MIN, THREAD_PRIO_MAX, prio );
-    }
+	if (prio < THREAD_PRIO_MIN || prio > THREAD_PRIO_MAX)
+	{
+		luaL_error( L, "Priority out of range: %d..+%d (%d)", 
+			THREAD_PRIO_MIN, THREAD_PRIO_MAX, prio );
+	}
 
-    /* --- Create and prepare the sub state --- */
+	/* --- Create and prepare the sub state --- */
 
-    L2 = luaL_newstate();   // uses standard 'realloc()'-based allocator,
-                            // sets the panic callback
+	L2 = luaL_newstate();   // uses standard 'realloc()'-based allocator,
+	// sets the panic callback
 
-    if (!L2) luaL_error( L, "'luaL_newstate()' failed; out of memory" );
+	if (!L2) luaL_error( L, "'luaL_newstate()' failed; out of memory" );
 
-    STACK_GROW( L,2 );
+	STACK_GROW( L,2 );
 
-    // Setting the globals table (needs to be done before loading stdlibs,
-    // and the lane function)
-    //
-    if (glob!=0) {
-STACK_CHECK(L)
-        if (!lua_istable(L,glob)) 
-            luaL_error( L, "Expected table, got %s", luaG_typename(L,glob) );
+	// Setting the globals table (needs to be done before loading stdlibs,
+	// and the lane function)
+	//
+	if (glob!=0)
+	{
+		STACK_CHECK(L)
+		if (!lua_istable(L,glob)) 
+			luaL_error( L, "Expected table, got %s", luaG_typename(L,glob) );
 
-        lua_pushvalue( L, glob );
-        lua_pushstring( L, "threadName");
-        lua_gettable( L, -2);
-        threadName = lua_tostring( L, -1);
-        lua_pop( L, 1);
-        luaG_inter_move( L,L2, 1 );     // moves the table to L2
+		lua_pushvalue( L, glob );
+		lua_pushstring( L, "threadName");
+		lua_gettable( L, -2);
+		threadName = lua_tostring( L, -1);
+		lua_pop( L, 1);
+		luaG_inter_move( L,L2, 1 );     // moves the table to L2
 
-        // L2 [-1]: table of globals
+		// L2 [-1]: table of globals
 
-        // "You can change the global environment of a Lua thread using lua_replace"
-        // (refman-5.0.pdf p. 30) 
-        //
-        lua_replace( L2, LUA_GLOBALSINDEX );
-STACK_END(L,0)
-    }
+		// "You can change the global environment of a Lua thread using lua_replace"
+		// (refman-5.0.pdf p. 30) 
+		//
+		lua_replace( L2, LUA_GLOBALSINDEX );
+		STACK_END(L,0)
+	}
 
-    // Selected libraries
-    //
-    if (libs) {
-        const char *err= luaG_openlibs( L2, libs );
-        ASSERT_L( !err );   // bad libs should have been noticed by 'lanes.lua'
+	// Selected libraries
+	//
+	if (libs)
+	{
+		const char *err= luaG_openlibs( L2, libs );
+		ASSERT_L( !err );   // bad libs should have been noticed by 'lanes.lua'
 
-        serialize_require( L2 );
-    }
+		serialize_require( L2 );
+	}
 
-    // Lane main function
-    //
-STACK_CHECK(L)
-    lua_pushvalue( L, 1 );
-    luaG_inter_move( L,L2, 1 );    // L->L2
-STACK_MID(L,0)
+	// Lane main function
+	//
+	STACK_CHECK(L)
+	if( lua_type(L, 1) == LUA_TFUNCTION)
+	{
+		lua_pushvalue( L, 1 );
+		luaG_inter_move( L,L2, 1 );    // L->L2
+		STACK_MID(L,0)
+	}
+	else if( lua_type(L, 1) == LUA_TSTRING)
+	{
+		// compile the string
+		if( luaL_loadstring( L2, lua_tostring( L, 1)) != 0)
+		{
+			luaL_error( L, "error when parsing lane function code");
+		}
+	}
 
-    ASSERT_L( lua_gettop(L2) == 1 );
-    ASSERT_L( lua_isfunction(L2,1) );
+	ASSERT_L( lua_gettop(L2) == 1 );
+	ASSERT_L( lua_isfunction(L2,1) );
 
-    // revive arguments
-    //
-    if (args) luaG_inter_copy( L,L2, args );    // L->L2
-STACK_MID(L,0)
+	// revive arguments
+	//
+	if (args) luaG_inter_copy( L,L2, args );    // L->L2
+	STACK_MID(L,0)
 
-ASSERT_L( (uint_t)lua_gettop(L2) == 1+args );
-ASSERT_L( lua_isfunction(L2,1) );
+	ASSERT_L( (uint_t)lua_gettop(L2) == 1+args );
+	ASSERT_L( lua_isfunction(L2,1) );
 
-    // 's' is allocated from heap, not Lua, since its life span may surpass 
-    // the handle's (if free running thread)
-    //
-    ud= lua_newuserdata( L, sizeof(struct s_lane*) );
-    ASSERT_L(ud);
+	// 's' is allocated from heap, not Lua, since its life span may surpass 
+	// the handle's (if free running thread)
+	//
+	ud= lua_newuserdata( L, sizeof(struct s_lane*) );
+	ASSERT_L(ud);
 
-    s= *ud= malloc( sizeof(struct s_lane) );
-    ASSERT_L(s);
+	s= *ud= malloc( sizeof(struct s_lane) );
+	ASSERT_L(s);
 
-    //memset( s, 0, sizeof(struct s_lane) );
-    s->L= L2;
-    s->status= PENDING;
-    s->cancel_request= FALSE;
-    
-    threadName = threadName ? threadName : "<unnamed thread>";
-    strcpy(s->threadName, threadName);
+	//memset( s, 0, sizeof(struct s_lane) );
+	s->L= L2;
+	s->status= PENDING;
+	s->cancel_request= FALSE;
+
+	threadName = threadName ? threadName : "<unnamed thread>";
+	strcpy(s->threadName, threadName);
 
 #if !( (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN) )
-    MUTEX_INIT( &s->done_lock_ );
-    SIGNAL_INIT( &s->done_signal_ );
+	MUTEX_INIT( &s->done_lock_ );
+	SIGNAL_INIT( &s->done_signal_ );
 #endif
-    s->mstatus= NORMAL;
-    s->selfdestruct_next= NULL;
+	s->mstatus= NORMAL;
+	s->selfdestruct_next= NULL;
 
-    // Set metatable for the userdata
-    //
-    lua_pushvalue( L, lua_upvalueindex(1) );
-    lua_setmetatable( L, -2 );
-STACK_MID(L,1)
+	// Set metatable for the userdata
+	//
+	lua_pushvalue( L, lua_upvalueindex(1) );
+	lua_setmetatable( L, -2 );
+	STACK_MID(L,1)
 
-    // Place 's' to registry, for 'cancel_test()' (even if 'cs'==0 we still
-    // do cancel tests at pending send/receive).
-    //
-    lua_pushlightuserdata( L2, CANCEL_TEST_KEY );
-    lua_pushlightuserdata( L2, s );
-    lua_rawset( L2, LUA_REGISTRYINDEX );
+	// Place 's' to registry, for 'cancel_test()' (even if 'cs'==0 we still
+	// do cancel tests at pending send/receive).
+	//
+	lua_pushlightuserdata( L2, CANCEL_TEST_KEY );
+	lua_pushlightuserdata( L2, s );
+	lua_rawset( L2, LUA_REGISTRYINDEX );
 
-    if (cs) {
-        lua_sethook( L2, cancel_hook, LUA_MASKCOUNT, cs );
-    }
+	if (cs)
+	{
+		lua_sethook( L2, cancel_hook, LUA_MASKCOUNT, cs );
+	}
 
-    THREAD_CREATE( &s->thread, lane_main, s, prio );
-STACK_END(L,1)
+	THREAD_CREATE( &s->thread, lane_main, s, prio );
+	STACK_END(L,1)
 
-    return 1;
+	return 1;
 }
 
 

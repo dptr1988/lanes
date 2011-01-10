@@ -54,9 +54,9 @@
   <a href="#changes">Change log</a>
   <!-- ... -->
 
-<p><br/><font size="-1"><i>Copyright &copy; 2007-08 Asko Kauppi. All rights reserved.</i>
+<p><br/><font size="-1"><i>Copyright &copy; 2007-10 Asko Kauppi. All rights reserved.</i>
     <br>Lua Lanes is published under the same <A HREF="http://en.wikipedia.org/wiki/MIT_License">MIT license</A> as Lua 5.1.
-    </p><p>This document was revised on 24-Aug-10, and applies to version 2.0.6.
+    </p><p>This document was revised on 3-Dec-10, and applies to version 2.0.9.
 </font></p>
 
 </center>
@@ -195,6 +195,9 @@ joins the threads, waiting for any results not already there.
     launching any number of lanes. They will share code, options, initial globals,
     but the particular arguments may vary. Only calling the generator function
     actually launches a lane, and provides a handle for controlling it.
+    Alternatively, <tt>lane_func</tt> may be a string, in which case it will be compiled
+    in the lane. This is to be able to launch lanes whith LuaJIT,
+    which does not support lua_dump, used internally to transfer functions to the lane.
 <!--
 </p>
 <p>This prepares <tt>lane_func</tt> to be called in parallel. It does not yet start
@@ -926,8 +929,14 @@ its actual value.
 <h2 id="changes">Change log</h2>
 
 <p>
+Dec-2010 (2.0.9):
+<ul>
+<li>Fixed 'memory leak' in some situations where a free running lane is collected before application shutdown</li>
+<li>Fix LuaJIT2 incompatibility (no 'tostring' hijack anymore)</li>
+<li>Added support to generate a lane from a string</li>
+</ul>
 
-Aug-2010 (20.0.6):
+Aug-2010 (2.0.6):
 <ul>
 <li>Fixed some memory leaks</li>
 <li>Fixed error in passing parameters to finalizers</li>

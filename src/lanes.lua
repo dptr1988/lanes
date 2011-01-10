@@ -6,7 +6,8 @@
 -- Author: Asko Kauppi <akauppi@gmail.com>
 --
 -- History:
---    Jun-08 AKa: major revise
+--    3-Dec-10  BGe: Added support to generate a lane from a string
+--    Jun-08    AKa: major revise
 --    15-May-07 AKa: pthread_join():less version, some speedup & ability to
 --                   handle more threads (~ 8000-9000, up from ~ 5000)
 --    26-Feb-07 AKa: serialization working (C side)
@@ -15,7 +16,7 @@
 --[[
 ===============================================================================
 
-Copyright (C) 2007-08 Asko Kauppi <akauppi@gmail.com>
+Copyright (C) 2007-10 Asko Kauppi <akauppi@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -89,7 +90,7 @@ ABOUT=
     author= "Asko Kauppi <akauppi@gmail.com>",
     description= "Running multiple Lua states in parallel",
     license= "MIT/X11",
-    copyright= "Copyright (c) 2007-08, Asko Kauppi",
+    copyright= "Copyright (c) 2007-10, Asko Kauppi",
     version= _version,
 }
 
@@ -268,8 +269,9 @@ function gen( ... )
     end
 
     local func= select(n,...)
-    if type(func)~="function" then
-        error( "Last parameter not function: "..tostring(func) )
+    local functype = type(func)
+    if functype ~= "function" and functype ~= "string" then
+        error( "Last parameter not function or string: "..tostring(func))
     end
 
     -- Check 'libs' already here, so the error goes in the right place

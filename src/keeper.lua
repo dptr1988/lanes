@@ -11,7 +11,7 @@
 --[[
 ===============================================================================
 
-Copyright (C) 2008 Asko Kauppi <akauppi@gmail.com>
+Copyright (C) 2008-10 Asko Kauppi <akauppi@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

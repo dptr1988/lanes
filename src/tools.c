@@ -1,5 +1,5 @@
 /*
- * TOOLS.C   	                    Copyright (c) 2002-08, Asko Kauppi
+ * TOOLS.C   	                    Copyright (c) 2002-10, Asko Kauppi
  *
  * Lua tools to support Lanes.
 */
@@ -7,7 +7,7 @@
 /*
 ===============================================================================
 
-Copyright (C) 2002-08 Asko Kauppi <akauppi@gmail.com>
+Copyright (C) 2002-10 Asko Kauppi <akauppi@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

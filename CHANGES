@@ -3,6 +3,10 @@ CHANGES:
 
 CHANGE X:
 
+CHANGE 20 BGe 3-Dec-2010:
+    Enable to specify a string as lane code instead of a function so that we dont use lua_dump, which
+    isn't supported by LuaJIT.
+
 CHANGE 19 BGe 2-Dec-2010:
     No longer rely on global function 'tostring' to generate unique identifiers when caching data being transfered through la linda. Should fix a compatilibity issue with LuaJIT2.
 

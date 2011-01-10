@@ -1,5 +1,5 @@
 /*
- * THREADING.C   	                    Copyright (c) 2007-08, Asko Kauppi
+ * THREADING.C   	                    Copyright (c) 2007-10, Asko Kauppi
  *
  * Lua Lanes OS threading specific code.
  *
@@ -10,7 +10,7 @@
 /*
 ===============================================================================
 
-Copyright (C) 2007-08 Asko Kauppi <akauppi@gmail.com>
+Copyright (C) 2007-10 Asko Kauppi <akauppi@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

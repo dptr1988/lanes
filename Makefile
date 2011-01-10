@@ -82,6 +82,7 @@ test:
 	$(MAKE) objects
 	$(MAKE) fibonacci
 	$(MAKE) recursive
+	$(MAKE) func_is_string
 
 basic: tests/basic.lua $(_TARGET_SO)
 	$(_PREFIX) $(LUA) $<
@@ -146,6 +147,8 @@ error-test: tests/error.lua $(_TARGET_SO)
 appendud: tests/appendud.lua $(_TARGET_SO)
 	$(_PREFIX) $(LUA) $<
 
+func_is_string: tests/func_is_string.lua $(_TARGET_SO)
+	$(_PREFIX) $(LUA) $<
 
 #---
 perftest-plain: tests/perftest.lua $(_TARGET_SO)
