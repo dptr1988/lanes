@@ -135,7 +135,7 @@ function send( ud, key, ... )
     local m= limits[key]
 
     if m and len+n > m then
-        return false    -- would exceed the limit; try again later
+        return false    -- would exceed the limit; try again later
     end
 
     for i=1,n do

@@ -123,6 +123,14 @@ end
 --
 -- lane_h.state: "pending"/"running"/"waiting"/"done"/"error"/"cancelled"
 --
+-- Note: Would be great to be able to have '__ipairs' metamethod, that gets
+--      called by 'ipairs()' function to custom iterate objects. We'd use it
+--      for making sure a lane has ended (results are available); not requiring
+--      the user to precede a loop by explicit 'h[0]' or 'h:join()'.
+--
+--      Or, even better, 'ipairs()' should start valuing '__index' instead
+--      of using raw reads that bypass it.
+--
 local lane_mt= {
     __index= function( me, k )
                 if type(k) == "number" then

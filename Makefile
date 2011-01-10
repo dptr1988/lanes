@@ -143,6 +143,10 @@ finalizer: tests/finalizer.lua $(_TARGET_SO)
 error-test: tests/error.lua $(_TARGET_SO)
 	$(_PREFIX) $(LUA) $<
 
+appendud: tests/appendud.lua $(_TARGET_SO)
+	$(_PREFIX) $(LUA) $<
+
+
 #---
 perftest-plain: tests/perftest.lua $(_TARGET_SO)
 	$(MAKE) _perftest ARGS="$< $(N) -plain"

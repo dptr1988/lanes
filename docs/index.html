@@ -360,6 +360,12 @@ between a timed out join and the moment you read it).
 </pre>
 </table>
 
+<p>
+If you want to wait for multiple lanes to finish (any of a set of lanes), use
+a <a href="#lindas">Linda</a> object. Give each lane a specific id, and send
+that id over a Linda once that thread is done (as the last thing you do).
+</p>
+
 
 <!-- cancelling +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
 <hr/>

@@ -4,6 +4,7 @@
  * Multithreading in Lua.
  * 
  * History:
+ *      24-Jun-09 (2.0.4): Made friendly to already multithreaded host apps.
  *      20-Oct-08 (2.0.2): Added closing of free-running threads, but it does
  *                  not seem to eliminate the occasional segfaults at process
  *                  exit.
@@ -13,10 +14,9 @@
  *      18-Sep-06 AKa: Started the module.
  *
  * Platforms (tested internally):
- *      OS X (10.5.4 PowerPC/Intel)
+ *      OS X (10.5.7 PowerPC/Intel)
  *      Linux x86 (Ubuntu 8.04)
  *      Win32 (Windows XP Home SP2, Visual C++ 2005/2008 Express)
- *      PocketPC (TBD)
  *
  * Platforms (tested externally):
  *      Win32 (MSYS) by Ross Berteig.
@@ -57,7 +57,7 @@
  *      ...
  */
 
-const char *VERSION= "2.0.3";
+const char *VERSION= "2.0.5";
 
 /*
 ===============================================================================
@@ -127,7 +127,57 @@ THE SOFTWARE.
 static char keeper_chunk[]= 
 #include "keeper.lch"
 
-struct s_lane;
+// NOTE: values to be changed by either thread, during execution, without
+//       locking, are marked "volatile"
+//
+struct s_lane {
+	THREAD_T thread;
+	//
+	// M: sub-thread OS thread
+	// S: not used
+
+	lua_State *L;
+	//
+	// M: prepares the state, and reads results
+	// S: while S is running, M must keep out of modifying the state
+
+	volatile enum e_status status;
+	// 
+	// M: sets to PENDING (before launching)
+	// S: updates -> RUNNING/WAITING -> DONE/ERROR_ST/CANCELLED
+
+	volatile bool_t cancel_request;
+	//
+	// M: sets to FALSE, flags TRUE for cancel request
+	// S: reads to see if cancel is requested
+
+#if !( (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN) )
+	SIGNAL_T done_signal_;
+	//
+	// M: Waited upon at lane ending  (if Posix with no PTHREAD_TIMEDJOIN)
+	// S: sets the signal once cancellation is noticed (avoids a kill)
+
+	MUTEX_T done_lock_;
+	// 
+	// Lock required by 'done_signal' condition variable, protecting
+	// lane status changes to DONE/ERROR_ST/CANCELLED.
+#endif
+
+	volatile enum { 
+		NORMAL,         // normal master side state
+		KILLED          // issued an OS kill
+	} mstatus;
+	//
+	// M: sets to NORMAL, if issued a kill changes to KILLED
+	// S: not used
+
+	struct s_lane * volatile selfdestruct_next;
+	//
+	// M: sets to non-NULL if facing lane handle '__gc' cycle but the lane
+	//    is still running
+	// S: cleans up after itself if non-NULL at lane exit
+};
+
 static bool_t cancel_test( lua_State *L );
 static void cancel_error( lua_State *L );
 
@@ -360,10 +410,11 @@ int keeper_call( lua_State* K, const char *func_name,
     int Ktos= lua_gettop(K);
     int retvals;
 
+    STACK_GROW( K, 2 );
+
     lua_getglobal( K, func_name );
     ASSERT_L( lua_isfunction(K,-1) );
 
-    STACK_GROW( K, 1 );
     lua_pushlightuserdata( K, linda );
 
     luaG_inter_copy( L,K, args );   // L->K
@@ -449,10 +500,36 @@ STACK_MID(KL,0)
                 cancel= cancel_test( L );   // testing here causes no delays
                 if (cancel) break;
 
+// Bugfix by Benoit Germain Dec-2009: change status of lane to "waiting"
+//
+#if 1
+{
+    struct s_lane *s;
+    enum e_status prev_status;
+    STACK_GROW(L,1);
+
+    STACK_CHECK(L)
+    lua_pushlightuserdata( L, CANCEL_TEST_KEY );
+    lua_rawget( L, LUA_REGISTRYINDEX );
+    s= lua_touserdata( L, -1 );     // lightuserdata (true 's_lane' pointer) / nil
+    lua_pop(L,1);
+    STACK_END(L,0)
+    if (s) {
+        prev_status = s->status;
+        s->status = WAITING;
+    }
+    if (!SIGNAL_WAIT( &linda->write_happened, &K->lock_, timeout )) {
+        if (s) { s->status = prev_status; }
+        break;
+    }
+    if (s) s->status = prev_status;
+}
+#else
                 // K lock will be released for the duration of wait and re-acquired
                 //
                 if (!SIGNAL_WAIT( &linda->read_happened, &K->lock_, timeout ))
                     break;  // timeout
+#endif
             }
         }
 STACK_END(KL,0)
@@ -509,10 +586,36 @@ LUAG_FUNC( linda_receive ) {
                 cancel= cancel_test( L );   // testing here causes no delays
                 if (cancel) break;
 
+// Bugfix by Benoit Germain Dec-2009: change status of lane to "waiting"
+//
+#if 1
+{
+    struct s_lane *s;
+    enum e_status prev_status;
+    STACK_GROW(L,1);
+
+    STACK_CHECK(L)
+    lua_pushlightuserdata( L, CANCEL_TEST_KEY );
+    lua_rawget( L, LUA_REGISTRYINDEX );
+    s= lua_touserdata( L, -1 );     // lightuserdata (true 's_lane' pointer) / nil
+    lua_pop(L,1);
+    STACK_END(L,0)
+    if (s) {
+        prev_status = s->status;
+        s->status = WAITING;
+    }
+    if (!SIGNAL_WAIT( &linda->write_happened, &K->lock_, timeout )) {
+        if (s) { s->status = prev_status; }
+        break;
+    }
+    if (s) s->status = prev_status;
+}
+#else
                 // Release the K lock for the duration of wait, and re-acquire
                 //
                 if (!SIGNAL_WAIT( &linda->write_happened, &K->lock_, timeout ))
                     break;
+#endif
             }
         }
     }
@@ -760,6 +863,17 @@ static int run_finalizers( lua_State *L, int lua_rc )
     if (!push_registry_table(L, FINALIZER_REG_KEY, FALSE /*don't create one*/))
         return 0;   // no finalizers
 
+    // TBD: Pierre LeMoine claims the 'tbl_index-1' should be -2.
+/*
+The following line from run_finalizers in lanes.c seems to be wrong to me:
+
+   error_index= (lua_rc!=0) ? tbl_index-1 : 0;   // absolute indices
+
+I think it should be -2 there, since the stack at this point should look like
+[-1] finalizer table <- tbl_index
+[-2] stack table
+[-3] error string
+*/
     tbl_index= lua_gettop(L);
     error_index= (lua_rc!=0) ? tbl_index-1 : 0;   // absolute indices
 
@@ -804,57 +918,6 @@ static int run_finalizers( lua_State *L, int lua_rc )
 
 /*---=== Threads ===---
 */
-
-// NOTE: values to be changed by either thread, during execution, without
-//       locking, are marked "volatile"
-//
-struct s_lane {
-    THREAD_T thread;
-        //
-        // M: sub-thread OS thread
-        // S: not used
-
-    lua_State *L;
-        //
-        // M: prepares the state, and reads results
-        // S: while S is running, M must keep out of modifying the state
-
-    volatile enum e_status status;
-        // 
-        // M: sets to PENDING (before launching)
-        // S: updates -> RUNNING/WAITING -> DONE/ERROR_ST/CANCELLED
-    
-    volatile bool_t cancel_request;
-        //
-        // M: sets to FALSE, flags TRUE for cancel request
-        // S: reads to see if cancel is requested
-
-#if !( (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN) )
-    SIGNAL_T done_signal_;
-        //
-        // M: Waited upon at lane ending  (if Posix with no PTHREAD_TIMEDJOIN)
-        // S: sets the signal once cancellation is noticed (avoids a kill)
-
-    MUTEX_T done_lock_;
-        // 
-        // Lock required by 'done_signal' condition variable, protecting
-        // lane status changes to DONE/ERROR_ST/CANCELLED.
-#endif
-
-    volatile enum { 
-        NORMAL,         // normal master side state
-        KILLED          // issued an OS kill
-    } mstatus;
-        //
-        // M: sets to NORMAL, if issued a kill changes to KILLED
-        // S: not used
-        
-    struct s_lane * volatile selfdestruct_next;
-        //
-        // M: sets to non-NULL if facing lane handle '__gc' cycle but the lane
-        //    is still running
-        // S: cleans up after itself if non-NULL at lane exit
-};
 
 static MUTEX_T selfdestruct_cs;
     //
@@ -1627,48 +1690,6 @@ LUAG_FUNC( thread_join )
 */
 
 /*
-* Push a timer gateway Linda object; only one deep userdata is
-* created for this, each lane will get its own proxy.
-*
-* Note: this needs to be done on the C side; Lua wouldn't be able
-*       to even see, when we've been initialized for the very first
-*       time (with us, they will be).
-*/
-static
-void push_timer_gateway( lua_State *L ) {
-
-    /* No need to lock; 'static' is just fine
-    */
-    static DEEP_PRELUDE *p;  // = NULL
-
-  STACK_CHECK(L)
-    if (!p) {
-        // Create the Linda (only on first time)
-        //
-        // proxy_ud= deep_userdata( idfunc )
-        //
-        lua_pushcfunction( L, luaG_deep_userdata );
-        lua_pushcfunction( L, LG_linda_id );
-        lua_call( L, 1 /*args*/, 1 /*retvals*/ );
-
-        ASSERT_L( lua_isuserdata(L,-1) );
-        
-        // Proxy userdata contents is only a 'DEEP_PRELUDE*' pointer
-        //
-        p= * (DEEP_PRELUDE**) lua_touserdata( L, -1 );
-        ASSERT_L(p && p->refcount==1 && p->deep);
-
-        // [-1]: proxy for accessing the Linda
-
-    } else {
-        /* Push a proxy based on the deep userdata we stored. 
-        */
-        luaG_push_proxy( L, LG_linda_id, p );
-    }
-  STACK_END(L,1)
-}
-
-/*
 * secs= now_secs()
 *
 * Returns the current time, as seconds (millisecond resolution).
@@ -1744,19 +1765,11 @@ LUAG_FUNC( wakeup_conv )
     lua_pushinteger( L, val ); \
     lua_setglobal( L, #name )
 
-
-int 
-#if (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC)
-__declspec(dllexport)
-#endif
-	luaopen_lanes( lua_State *L ) {
+/*
+* One-time initializations
+*/
+static void init_once_LOCKED( lua_State *L, volatile DEEP_PRELUDE ** timer_deep_ref ) {
     const char *err;
-    static volatile char been_here;  // =0
-
-    // One time initializations:
-    //
-    if (!been_here) {
-        been_here= TRUE;
 
 #if (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC)
         now_secs();     // initialize 'now_secs()' internal offset
@@ -1806,10 +1819,87 @@ __declspec(dllexport)
   #endif
 #endif
         err= init_keepers();
-        if (err) 
+    if (err) {
             luaL_error( L, "Unable to initialize: %s", err );
     }
     
+    // Initialize 'timer_deep'; a common Linda object shared by all states
+    //
+    ASSERT_L( timer_deep_ref && (!(*timer_deep_ref)) );
+
+  STACK_CHECK(L)
+    {
+        // proxy_ud= deep_userdata( idfunc )
+        //
+        lua_pushcfunction( L, luaG_deep_userdata );
+        lua_pushcfunction( L, LG_linda_id );
+        lua_call( L, 1 /*args*/, 1 /*retvals*/ );
+
+        ASSERT_L( lua_isuserdata(L,-1) );
+        
+        // Proxy userdata contents is only a 'DEEP_PRELUDE*' pointer
+        //
+        *timer_deep_ref= * (DEEP_PRELUDE**) lua_touserdata( L, -1 );
+        ASSERT_L( (*timer_deep_ref) && (*timer_deep_ref)->refcount==1 && (*timer_deep_ref)->deep );
+
+        lua_pop(L,1);   // we don't need the proxy
+    }
+  STACK_END(L,0)
+}
+
+int 
+#if (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC)
+__declspec(dllexport)
+#endif
+	luaopen_lanes( lua_State *L ) {
+
+    // Initialized by 'init_once_LOCKED()': the deep userdata Linda object
+    // used for timers (each lane will get a proxy to this)
+    //
+    static volatile DEEP_PRELUDE *timer_deep;  // = NULL
+
+    /*
+    * Making one-time initializations.
+    *
+    * When the host application is single-threaded (and all threading happens via Lanes)
+    * there is no problem. But if the host is multithreaded, we need to lock around the
+    * initializations. 
+    */
+    static volatile int /*bool*/ go_ahead; // = 0
+#ifdef PLATFORM_WIN32
+    {
+        // TBD: Someone please replace this with reliable Win32 API code. Problem is,
+        //      there's no autoinitializing locks (s.a. PTHREAD_MUTEX_INITIALIZER) in
+        //      Windows so 'InterlockedIncrement' or something needs to be used.
+        //      This is 99.9999% safe, though (and always safe if host is single-threaded)
+        //      -- AKa 24-Jun-2009
+        //
+        static volatile unsigned my_number;   // = 0
+        
+        if (my_number++ == 0) {     // almost atomic
+            init_once_LOCKED(L, &timer_deep);
+            go_ahead= 1;    // let others pass
+        } else {
+            while( !go_ahead ) { Sleep(1); }    // changes threads
+        }
+    }
+#else
+    if (!go_ahead) {
+        static pthread_mutex_t my_lock= PTHREAD_MUTEX_INITIALIZER;
+        pthread_mutex_lock(&my_lock);
+        {
+            // Recheck now that we're within the lock
+            //
+            if (!go_ahead) {
+                init_once_LOCKED(L, &timer_deep);
+                go_ahead= 1;
+            }
+        }
+        pthread_mutex_unlock(&my_lock);
+    }
+#endif
+    assert( timer_deep != 0 );
+
     // Linda identity function
     //
     REG_FUNC( linda_id );
@@ -1835,7 +1925,7 @@ __declspec(dllexport)
     REG_FUNC( now_secs );
     REG_FUNC( wakeup_conv );
 
-    push_timer_gateway(L);    
+    luaG_push_proxy( L, LG_linda_id, (DEEP_PRELUDE *) timer_deep );
     lua_setglobal( L, "timer_gateway" );
 
     REG_INT2( max_prio, THREAD_PRIO_MAX );
