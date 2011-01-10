@@ -1060,7 +1060,7 @@ static void selfdestruct_atexit( void ) {
 #if 0
         // 2.0.2: at least timer lane is still here
         //
-        //fprintf( stderr, "Left %d lane(s) with cancel request at process end.\n", n );
+        DEBUGEXEC(fprintf( stderr, "Left %d lane(s) with cancel request at process end.\n", n ));
 #else
         n=0;
         MUTEX_LOCK( &selfdestruct_cs );
@@ -1080,13 +1080,14 @@ static void selfdestruct_atexit( void ) {
         }
         MUTEX_UNLOCK( &selfdestruct_cs );
 
-        fprintf( stderr, "Killed %d lane(s) at process end.\n", n );
+        DEBUGEXEC(fprintf( stderr, "Killed %d lane(s) at process end.\n", n ));
 #endif
     }
 	{
     int i;
     for(i=0;i<KEEPER_STATES_N;i++){
       lua_close(keeper[i].L);
+      keeper[i].L = 0;
     }
   }
 }
@@ -1361,7 +1362,7 @@ void SetThreadName( DWORD dwThreadID, char* threadName)
         // We're a free-running thread and no-one's there to clean us up.
         //
         lua_close( s->L );
-        L= 0;
+        s->L = L = 0;
 
     #if !( (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN) )
         SIGNAL_FREE( &s->done_signal_ );
@@ -1554,47 +1555,56 @@ STACK_END(L,1)
 //
 // Todo: Maybe we should have a clear #define for selecting either behaviour.
 //
-LUAG_FUNC( thread_gc ) {
-    struct s_lane *s= lua_toLane(L,1);
+LUAG_FUNC( thread_gc )
+{
+	struct s_lane *s= lua_toLane(L,1);
 
-    // We can read 's->status' without locks, but not wait for it
-    //
-    if (s->status < DONE) {
-        //
-        selfdestruct_add(s);
-        assert( s->selfdestruct_next );
-        return 0;
+	// We can read 's->status' without locks, but not wait for it
+	//
+	if (s->status < DONE)
+	{
+		//
+		selfdestruct_add(s);
+		assert( s->selfdestruct_next );
+		return 0;
 
-    } else if (s->mstatus==KILLED) {
-        // Make sure a kill has proceeded, before cleaning up the data structure.
-        //
-        // If not doing 'THREAD_WAIT()' we should close the Lua state here
-        // (can it be out of order, since we killed the lane abruptly?)
-        //
+	}
+	else if (s->mstatus==KILLED)
+	{
+		// Make sure a kill has proceeded, before cleaning up the data structure.
+		//
+		// If not doing 'THREAD_WAIT()' we should close the Lua state here
+		// (can it be out of order, since we killed the lane abruptly?)
+		//
 #if 0
-        lua_close( s->L );
+		lua_close( s->L );
+		s->L = 0;
 #else
-fprintf( stderr, "** Joining with a killed thread (needs testing) **" );
+		DEBUGEXEC(fprintf( stderr, "** Joining with a killed thread (needs testing) **" ));
 #if (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN)
-        THREAD_WAIT( &s->thread, -1 );
+		THREAD_WAIT( &s->thread, -1 );
 #else
-        THREAD_WAIT( &s->thread, &s->done_signal_, &s->done_lock_, &s->status, -1 );
+		THREAD_WAIT( &s->thread, &s->done_signal_, &s->done_lock_, &s->status, -1 );
 #endif
-fprintf( stderr, "** Joined ok **" );
+		DEBUGEXEC(fprintf( stderr, "** Joined ok **" ));
 #endif
-    }
+	}
+	else if( s->L)
+	{
+		lua_close( s->L);
+		s->L = 0;
+	}
 
-    // Clean up after a (finished) thread
-    //
+	// Clean up after a (finished) thread
+	//
 #if (! ((defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN)))
-    SIGNAL_FREE( &s->done_signal_ );
-    MUTEX_FREE( &s->done_lock_ );
+	SIGNAL_FREE( &s->done_signal_ );
+	MUTEX_FREE( &s->done_lock_ );
 #endif
 
-    //lua_close(s -> L); // don't do this, garbage collection already took care of it
-    free(s);
+	free(s);
 
-    return 0;
+	return 0;
 }
 
 
@@ -1742,10 +1752,11 @@ LUAG_FUNC( thread_join )
             break;
         
         default:
-            fprintf( stderr, "Status: %d\n", s->status );
+            DEBUGEXEC(fprintf( stderr, "Status: %d\n", s->status ));
             ASSERT_L( FALSE ); ret= 0;
     }
     lua_close(L2);
+    s->L = L2 = 0;
 
     return ret;
 }

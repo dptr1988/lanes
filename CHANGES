@@ -3,6 +3,10 @@ CHANGES:
 
 CHANGE X:
 
+CHANGE 18 BGe 6-Oct-2010:
+    Fixed 'memory leak' in some situations where a free running lane is collected before application shutdown
+	A bit of code cleanup
+
 CHANGE 17 BGe 21-Sept-2010:
     Fixed stupid compilation errors.
 
@@ -28,7 +32,7 @@ CHANGE 12 (bug fix on Windows, 2.0.3) AKa 25-Jan-2009:
     Did CHANGE 9 the way it should be done.
 
 CHANGE 11 (new feature, 2.0.3) AKa 23-Jan-2009:
-    Finalizers ('set_finalizer()') for being able to do cleanup of a lane's 
+    Finalizers ('set_finalizer()') for being able to do cleanup of a lane's
     resources, whether it returned succesfully or via an error.
 
 CHANGE 10 (new feature, 2.0.3) AKa 23-Jan-2009:
@@ -39,12 +43,12 @@ CHANGE 10 (new feature, 2.0.3) AKa 23-Jan-2009:
 CHANGE 9 (bug fix on Windows) AKa 10-Dec-2008 (> 2.0.2):
     Applied patch from Kriss Daniels to avoid issues on 'now_time()' in Win32
     (http://luaforge.net/forum/forum.php?thread_id=22704&forum_id=1781).
-    
+
 CHANGE 8 (bug fix) AKa 26-Oct-2008:
     Avoids occasional segfault at process exit (on multicore CPUs). Does this
     by keeping track of "free running" threads (s.a. the time thread) and
-    cancelling them at process exit. 
-    
+    cancelling them at process exit.
+
     Tested (2.0.2) on Linux 64,x86, OS X, WinXP.
 
 CHANGE 7 (bug fix) AKa 15-Oct-2008:
@@ -55,15 +59,15 @@ CHANGE 6 (bug fix) AKa 15-Oct-2008:
     Added local caches of the following to src/lanes.lua (was otherwise getting
     errors at least in 'tests/irayo_recursive.lua').
 
-		local assert= assert 
-		local string_gmatch= assert( string.gmatch ) 
-		local select= assert( select ) 
-		local type= assert( type ) 
-		local pairs= assert( pairs ) 
-		local tostring= assert( tostring ) 
-		local error= assert( error ) 
-		local setmetatable= assert( setmetatable ) 
-		local rawget= assert( rawget ) 
+		local assert= assert
+		local string_gmatch= assert( string.gmatch )
+		local select= assert( select )
+		local type= assert( type )
+		local pairs= assert( pairs )
+		local tostring= assert( tostring )
+		local error= assert( error )
+		local setmetatable= assert( setmetatable )
+		local rawget= assert( rawget )
 
     Thanks to Irayo for detecting and reporting this.
 
@@ -76,17 +80,17 @@ CHANGE 4 (new feature):
 CHANGE 3 (bug fix) AKa 5-Aug-2008:
     The '__gc' method was not tied to thread userdata, at all. Caused memory
     lifespan problems at least on OS X when threads were cancelled (EINVAL).
-    
+
 CHANGE 2 (bug fix) AKa 5-Aug-2008:
     Better calculation of timeouts, always making them absolute (even in Win32)
     to allow for events that wake the lane up but don't read/write the Linda
     key that it was observing.
 
 CHANGE 1 (bug fix) AKa 4-Aug-2008:
-    Signalling woke up only one waiting thread, not all. This caused i.e. 
-    receive to not wake up if there was another thread waiting on the same 
+    Signalling woke up only one waiting thread, not all. This caused i.e.
+    receive to not wake up if there was another thread waiting on the same
     Linda object.
-    
+
     PThread fix: using 'pthread_cond_broadcast()' instead of 'pthread_cond_signal()'
     Win32 fix: using manual events and 'PulseEvent()'
 
