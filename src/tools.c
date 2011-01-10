@@ -600,7 +600,7 @@ uint_t get_mt_id( lua_State *L, int i ) {
         // [-2]: reg[REG_MTID]
         // [-1]: nil/uint
     
-    id= lua_tointeger(L,-1);    // 0 for nil
+    id= (uint_t)lua_tointeger(L,-1);    // 0 for nil
     lua_pop(L,1);
   STACK_MID(L,1)
     

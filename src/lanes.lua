@@ -312,7 +312,7 @@ lane_proxy= function( ud )
         
         -- void= me:cancel()
         --
-        cancel= function(me) thread_cancel(me._ud) end,
+        cancel= function(me, time, force) thread_cancel(me._ud, time, force) end,
         
         -- [...] | [nil,err,stack_tbl]= me:join( [wait_secs=-1] )
         --
@@ -503,7 +503,7 @@ if first_time then
     -- We let the timer lane be a "free running" thread; no handle to it
     -- remains.
     --
-    gen( "io", { priority=max_prio }, function()
+    gen( "io", { priority=max_prio, globals={threadName="LanesTimer"} }, function()
 
         while true do
             local next_wakeup= check_timers()

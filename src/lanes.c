@@ -4,6 +4,7 @@
  * Multithreading in Lua.
  * 
  * History:
+ *      24-Aug-10 (2.0.6): Mem fixes, argument checking (lua_toLinda result), thread name
  *      24-Jun-09 (2.0.4): Made friendly to already multithreaded host apps.
  *      20-Oct-08 (2.0.2): Added closing of free-running threads, but it does
  *                  not seem to eliminate the occasional segfaults at process
@@ -54,10 +55,11 @@
  *
  * To-do:
  *
+ * Make waiting threads cancelable.
  *      ...
  */
 
-const char *VERSION= "2.0.5";
+const char *VERSION= "2.0.6";
 
 /*
 ===============================================================================
@@ -84,10 +86,11 @@ THE SOFTWARE.
 
 ===============================================================================
 */
+
 #include <string.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -135,6 +138,8 @@ struct s_lane {
 	//
 	// M: sub-thread OS thread
 	// S: not used
+   
+   char threadName[64]; //Optional, for debugging and such. owerflowable by a strcpy.
 
 	lua_State *L;
 	//
@@ -459,6 +464,8 @@ LUAG_FUNC( linda_send ) {
     struct s_Keeper *K;
     time_d timeout= -1.0;
     uint_t key_i= 2;    // index of first key, if timeout not there
+    
+    luaL_argcheck( L, linda, 1, "expected a linda object!");
 
     if (lua_isnumber(L,2)) {
         timeout= SIGNAL_TIMEOUT_PREPARE( lua_tonumber(L,2) );
@@ -505,7 +512,7 @@ STACK_MID(KL,0)
 #if 1
 {
     struct s_lane *s;
-    enum e_status prev_status;
+    enum e_status prev_status = ERROR_ST; // prevent 'might be used uninitialized' warnings
     STACK_GROW(L,1);
 
     STACK_CHECK(L)
@@ -560,6 +567,8 @@ LUAG_FUNC( linda_receive ) {
     time_d timeout= -1.0;
     uint_t key_i= 2;
 
+    luaL_argcheck( L, linda, 1, "expected a linda object!");
+
     if (lua_isnumber(L,2)) {
         timeout= SIGNAL_TIMEOUT_PREPARE( lua_tonumber(L,2) );
         key_i++;
@@ -591,7 +600,7 @@ LUAG_FUNC( linda_receive ) {
 #if 1
 {
     struct s_lane *s;
-    enum e_status prev_status;
+    enum e_status prev_status = ERROR_ST; // prevent 'might be used uninitialized' warnings
     STACK_GROW(L,1);
 
     STACK_CHECK(L)
@@ -638,8 +647,11 @@ LUAG_FUNC( linda_receive ) {
 LUAG_FUNC( linda_set ) {
     struct s_Linda *linda= lua_toLinda( L, 1 );
     bool_t has_value= !lua_isnil(L,3);
+    struct s_Keeper *K;
 
-    struct s_Keeper *K= keeper_acquire( linda );
+    luaL_argcheck( L, linda, 1, "expected a linda object!");
+
+    K= keeper_acquire( linda );
     {
         int pushed= keeper_call( K->L, "set", L, linda, 2 );
         ASSERT_L( pushed==0 );
@@ -664,8 +676,11 @@ LUAG_FUNC( linda_set ) {
 LUAG_FUNC( linda_get ) {
     struct s_Linda *linda= lua_toLinda( L, 1 );
     int pushed;
+    struct s_Keeper *K;
 
-    struct s_Keeper *K= keeper_acquire( linda );
+    luaL_argcheck( L, linda, 1, "expected a linda object!");
+
+    K= keeper_acquire( linda );
     {
         pushed= keeper_call( K->L, "get", L, linda, 2 );
         ASSERT_L( pushed==0 || pushed==1 );
@@ -683,8 +698,11 @@ LUAG_FUNC( linda_get ) {
 */
 LUAG_FUNC( linda_limit ) {
     struct s_Linda *linda= lua_toLinda( L, 1 );
+    struct s_Keeper *K;
 
-    struct s_Keeper *K= keeper_acquire( linda );
+    luaL_argcheck( L, linda, 1, "expected a linda object!");
+
+    K= keeper_acquire( linda );
     {
         int pushed= keeper_call( K->L, "limit", L, linda, 2 );
         ASSERT_L( pushed==0 );
@@ -707,6 +725,7 @@ LUAG_FUNC( linda_limit ) {
 */
 LUAG_FUNC( linda_deep ) {
     struct s_Linda *linda= lua_toLinda( L, 1 );
+    luaL_argcheck( L, linda, 1, "expected a linda object!");
     lua_pushlightuserdata( L, linda );      // just the address
     return 1;
 }
@@ -863,25 +882,14 @@ static int run_finalizers( lua_State *L, int lua_rc )
     if (!push_registry_table(L, FINALIZER_REG_KEY, FALSE /*don't create one*/))
         return 0;   // no finalizers
 
-    // TBD: Pierre LeMoine claims the 'tbl_index-1' should be -2.
-/*
-The following line from run_finalizers in lanes.c seems to be wrong to me:
-
-   error_index= (lua_rc!=0) ? tbl_index-1 : 0;   // absolute indices
-
-I think it should be -2 there, since the stack at this point should look like
-[-1] finalizer table <- tbl_index
-[-2] stack table
-[-3] error string
-*/
     tbl_index= lua_gettop(L);
-    error_index= (lua_rc!=0) ? tbl_index-1 : 0;   // absolute indices
+    error_index= (lua_rc!=0) ? tbl_index-2 : 0;   // absolute indices
 
     STACK_GROW(L,4);
 
     // [-1]: { func [, ...] }
     //
-    for( n= lua_objlen(L,-1); n>0; n-- ) {
+    for( n= (unsigned int)lua_objlen(L,-1); n>0; n-- ) {
         unsigned args= 0;
         lua_pushinteger( L,n );
         lua_gettable( L, -2 );
@@ -1048,11 +1056,13 @@ static void selfdestruct_atexit( void ) {
     // Linux (at least 64-bit): CAUSES A SEGFAULT IF THIS BLOCK IS ENABLED
     //       and works without the block (so let's leave those lanes running)
     //
-#if 1
+//we want to free memory and such when we exit.
+#if 0
         // 2.0.2: at least timer lane is still here
         //
         //fprintf( stderr, "Left %d lane(s) with cancel request at process end.\n", n );
 #else
+        n=0;
         MUTEX_LOCK( &selfdestruct_cs );
         {
             struct s_lane *s= selfdestruct_first;
@@ -1061,6 +1071,8 @@ static void selfdestruct_atexit( void ) {
                 s->selfdestruct_next= NULL;     // detach from selfdestruct chain
 
                 THREAD_KILL( &s->thread );
+                lua_close(s->L);
+                free(s);
                 s= next_s;
                 n++;
             }
@@ -1071,6 +1083,12 @@ static void selfdestruct_atexit( void ) {
         fprintf( stderr, "Killed %d lane(s) at process end.\n", n );
 #endif
     }
+	{
+    int i;
+    for(i=0;i<KEEPER_STATES_N;i++){
+      lua_close(keeper[i].L);
+    }
+  }
 }
 
 
@@ -1216,6 +1234,38 @@ static int lane_error( lua_State *L ) {
 }
 #endif
 
+#if defined PLATFORM_WIN32
+//see http://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx
+#define MS_VC_EXCEPTION 0x406D1388
+#pragma pack(push,8)
+typedef struct tagTHREADNAME_INFO
+{
+   DWORD dwType; // Must be 0x1000.
+   LPCSTR szName; // Pointer to name (in user addr space).
+   DWORD dwThreadID; // Thread ID (-1=caller thread).
+   DWORD dwFlags; // Reserved for future use, must be zero.
+} THREADNAME_INFO;
+#pragma pack(pop)
+
+void SetThreadName( DWORD dwThreadID, char* threadName)
+{
+   THREADNAME_INFO info;
+   Sleep(10);
+   info.dwType = 0x1000;
+   info.szName = threadName;
+   info.dwThreadID = dwThreadID;
+   info.dwFlags = 0;
+
+   __try
+   {
+      RaiseException( MS_VC_EXCEPTION, 0, sizeof(info)/sizeof(ULONG_PTR), (ULONG_PTR*)&info );
+   }
+   __except(EXCEPTION_EXECUTE_HANDLER)
+   {
+   }
+}
+#endif
+
 
 //---
 #if (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC)
@@ -1228,7 +1278,12 @@ static int lane_error( lua_State *L ) {
     int rc, rc2;
     lua_State *L= s->L;
 
-    s->status= RUNNING;  // PENDING -> RUNNING
+ 
+#if defined PLATFORM_WIN32
+	SetThreadName(-1, s->threadName);
+#endif
+
+   s->status= RUNNING;  // PENDING -> RUNNING
 
     // Tie "set_finalizer()" to the state
     //
@@ -1356,10 +1411,11 @@ LUAG_FUNC( thread_new )
     lua_State *L2;
     struct s_lane *s;
     struct s_lane **ud;
+    const char *threadName = 0;
 
     const char *libs= lua_tostring( L, 2 );
     uint_t cs= luaG_optunsigned( L, 3,0);
-    int prio= luaL_optinteger( L, 4,0);
+    int prio= (int)luaL_optinteger( L, 4,0);
     uint_t glob= luaG_isany(L,5) ? 5:0;
 
     #define FIXED_ARGS (5)
@@ -1388,6 +1444,10 @@ STACK_CHECK(L)
             luaL_error( L, "Expected table, got %s", luaG_typename(L,glob) );
 
         lua_pushvalue( L, glob );
+        lua_pushstring( L, "threadName");
+        lua_gettable( L, -2);
+        threadName = lua_tostring( L, -1);
+        lua_pop( L, 1);
         luaG_inter_move( L,L2, 1 );     // moves the table to L2
 
         // L2 [-1]: table of globals
@@ -1439,6 +1499,9 @@ ASSERT_L( lua_isfunction(L2,1) );
     s->L= L2;
     s->status= PENDING;
     s->cancel_request= FALSE;
+    
+    threadName = threadName ? threadName : "<unnamed thread>";
+    strcpy(s->threadName, threadName);
 
 #if !( (defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN) )
     MUTEX_INIT( &s->done_lock_ );
@@ -1526,8 +1589,10 @@ fprintf( stderr, "** Joined ok **" );
 #if (! ((defined PLATFORM_WIN32) || (defined PLATFORM_POCKETPC) || (defined PTHREAD_TIMEDJOIN)))
     SIGNAL_FREE( &s->done_signal_ );
     MUTEX_FREE( &s->done_lock_ );
-    free(s);
 #endif
+
+    //lua_close(s -> L); // don't do this, garbage collection already took care of it
+    free(s);
 
     return 0;
 }
@@ -1718,12 +1783,12 @@ LUAG_FUNC( wakeup_conv )
         // .isdst (daylight saving on/off)
 
   STACK_CHECK(L)    
-    lua_getfield( L, 1, "year" ); year= lua_tointeger(L,-1); lua_pop(L,1);
-    lua_getfield( L, 1, "month" ); month= lua_tointeger(L,-1); lua_pop(L,1);
-    lua_getfield( L, 1, "day" ); day= lua_tointeger(L,-1); lua_pop(L,1);
-    lua_getfield( L, 1, "hour" ); hour= lua_tointeger(L,-1); lua_pop(L,1);
-    lua_getfield( L, 1, "min" ); min= lua_tointeger(L,-1); lua_pop(L,1);
-    lua_getfield( L, 1, "sec" ); sec= lua_tointeger(L,-1); lua_pop(L,1);
+    lua_getfield( L, 1, "year" ); year= (int)lua_tointeger(L,-1); lua_pop(L,1);
+    lua_getfield( L, 1, "month" ); month= (int)lua_tointeger(L,-1); lua_pop(L,1);
+    lua_getfield( L, 1, "day" ); day= (int)lua_tointeger(L,-1); lua_pop(L,1);
+    lua_getfield( L, 1, "hour" ); hour= (int)lua_tointeger(L,-1); lua_pop(L,1);
+    lua_getfield( L, 1, "min" ); min= (int)lua_tointeger(L,-1); lua_pop(L,1);
+    lua_getfield( L, 1, "sec" ); sec= (int)lua_tointeger(L,-1); lua_pop(L,1);
 
     // If Lua table has '.isdst' we trust that. If it does not, we'll let
     // 'mktime' decide on whether the time is within DST or not (value -1).

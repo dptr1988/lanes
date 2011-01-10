@@ -3,6 +3,16 @@ CHANGES:
 
 CHANGE X:
 
+CHANGE 17 BGe 21-Sept-2010:
+    Fixed stupid compilation errors.
+
+CHANGE 16 PLM 24-Aug-2010:
+    Releasing memory at gc / atexit.
+    Finalizers actually get error strings.
+    Fixed missing argument propagation in lane:cancel
+    Added variable threadName sent trough globals-table. Set in s_lane, and in debuggers on windows.
+    Added argument checking for linda-objects, where missing them caused crashes.
+
 CHANGE 15 (minor) BGe 27-Jul-2010:
     Version bump for a true upgrade release (2.0.4 package was only a renamed 2.0.3)
 
