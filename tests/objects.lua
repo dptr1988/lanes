@@ -4,7 +4,7 @@
 -- Tests that objects (metatables) can be passed between lanes.
 --
 
-require "lanes"
+lanes = require "lanes"
 
 local linda= lanes.linda()
 

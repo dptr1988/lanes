@@ -4,7 +4,7 @@
 -- Test program for Lua Lanes
 --
 
-require "lanes"
+lanes = require "lanes"
 
 local table_concat= assert(table.concat)
 

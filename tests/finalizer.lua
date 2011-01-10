@@ -8,7 +8,7 @@
 -- thing to do.     -- AKa 22-Jan-2009
 --
 
-require "lanes"
+lanes = require "lanes"
 
 local FN= "finalizer-test.tmp"
 

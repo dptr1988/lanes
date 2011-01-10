@@ -6,7 +6,7 @@
 --
 -- Needs Lanes >= 2.0.3
 --
-require "lanes"
+lanes = require "lanes"
 
 local _tab = {
     beginupdate = function (this) print('tab.beginupdate') end;

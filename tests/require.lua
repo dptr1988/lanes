@@ -3,7 +3,7 @@
 --
 -- Test that 'require' works from sublanes
 --
-require 'lanes'
+lanes = require 'lanes'
 
 local function a_lane()
     -- To require 'math' we still actually need to have it initialized for
@@ -14,7 +14,7 @@ local function a_lane()
     assert( math.sqrt(4)==2 )
 
     assert( lanes==nil )
-    require "lanes"
+    lanes = require "lanes"
     assert( lanes and lanes.gen )
 
     local h= lanes.gen( function() return 42 end ) ()

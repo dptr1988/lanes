@@ -11,7 +11,7 @@ local function func( depth )
         return "done!"
     end
 
-    require "lanes"
+    lanes = require "lanes"
     local lane= lanes.gen("*", func)( depth+1 )
     return lane[1]
 end

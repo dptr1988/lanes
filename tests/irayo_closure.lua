@@ -10,7 +10,7 @@ haven't investigated further.
 e.g. { globals = { data = 1, func = function() useclosurehere() end } }"
 ]]
 
-require "lanes"
+lanes = require "lanes"
 
 local function testrun()
     assert( print )

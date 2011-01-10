@@ -4,7 +4,7 @@
 -- Sample program for Lua Lanes
 --
 
-require "lanes"
+lanes = require "lanes"
 
 local linda= lanes.linda()
 local atomic_inc= lanes.genatomic( linda, "FIFO_n" )

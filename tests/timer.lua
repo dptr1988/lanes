@@ -8,7 +8,7 @@
 io.stderr:setvbuf "no"
 
 
-require "lanes"
+lanes = require "lanes"
 
 local linda= lanes.linda()
 

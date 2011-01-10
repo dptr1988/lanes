@@ -4,7 +4,7 @@
 -- Note: this code is supposed to end in errors; not included in 'make test'
 --
 
-require "lanes"
+lanes = require "lanes"
 
 local function lane()
 

@@ -1,4 +1,4 @@
-require "lanes"
+lanes = require "lanes"
 
 local options = {globals = { b = 666 }}
 
