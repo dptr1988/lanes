@@ -160,6 +160,28 @@ Or use <A HREF="http://www.luarocks.org" TARGET="_blank">Lua Rocks</A> package m
     ... output ...
 </pre>
 
+<!-- initialization +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<hr/>
+<h2 id="initialization">Initialization</h2>
+<p>Lua Lanes doesn't require any particular initialization procedure other than simply
+requiring the lanes module with <tt>require('lanes')</tt>.
+</p>
+
+<p>On Windows platforms, the one time initialization procedure is not thread safe if
+it is initialized from multiple threads created by the host. But if you use Lanes as
+your only source of threading ( meaning that your application is single threaded until
+you get Lanes initialized ), then the initization procedure will be fine on all platforms. 
+</p>
+ 
+<p>The <tt>lanes</tt> module does not export any new globals, but it does override the
+global <tt>require</tt> function so that it can serialize calls to that function.
+Since it does create any new global variables, it is not compatible with previous
+versions of Lua Lanes that used the <tt>module</tt> function to write to the callers
+global namespace. To maintain compatibility with previous versions of Lua Lanes ( that
+used the <tt>module()</tt> function ) you'll need to put the module interface table
+in the global <tt>lanes</tt> variable by yourself with something like
+<tt>lanes = require('lanes')</tt>.
+</p>
 
 <!-- launching +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
 <hr/>
@@ -209,6 +231,12 @@ Lanes automatically copies upvalues over to the new lanes, so you
 need not wrap all the required elements into one 'wrapper' function. If
 <tt>lane_func</tt> uses some local values, or local functions, they will be there
 also in the new lanes.
+</p><p>
+The initial global state of the generated lane will be what you normally get when
+loading the libraries that you've chosen to load for the lane, with the exception of
+<tt>set_finalizer</tt> and <tt>require</tt>. <tt>set_finalizer</tt> is initialized
+as a function and <tt>require</tt> is modified to use the Lanes serialized
+require function.
 </p><p>
     <code>libs_str</code> defines the standard libraries made available to the
     new Lua state:
@@ -408,7 +436,7 @@ does not offer, however, is scoped <a href="http://en.wikipedia.org/wiki/Finaliz
 that would get called when a certain block of instructions gets exited, whether
 through peaceful return or abrupt <tt>error</tt>.
 </p>
-<p>Since 2.0.3, Lanes prepares a function <tt>set_finalizer</tt> for doing this. 
+<p>Since 2.0.3, Lanes prepares a global function <tt>set_finalizer</tt> in the generated lanes for doing this. 
 Any functions given to it will be called in the lane Lua state, just prior to 
 closing it. They are not called in any particular order.
 </p>
