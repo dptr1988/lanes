@@ -175,7 +175,7 @@ you get Lanes initialized ), then the initization procedure will be fine on all 
  
 <p>The <tt>lanes</tt> module does not export any new globals, but it does override the
 global <tt>require</tt> function so that it can serialize calls to that function.
-Since it does create any new global variables, it is not compatible with previous
+Since it does not create any new global variables, it is not compatible with previous
 versions of Lua Lanes that used the <tt>module</tt> function to write to the callers
 global namespace. To maintain compatibility with previous versions of Lua Lanes ( that
 used the <tt>module()</tt> function ) you'll need to put the module interface table
