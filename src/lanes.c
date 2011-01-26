@@ -989,6 +989,11 @@ static void selfdestruct_remove( struct s_lane *s ) {
     MUTEX_UNLOCK( &selfdestruct_cs );
 }
 
+// Initialized by 'init_once_LOCKED()': the deep userdata Linda object
+// used for timers (each lane will get a proxy to this)
+//
+volatile DEEP_PRELUDE *timer_deep;  // = NULL
+
 /*
 * Process end; cancel any still free-running threads
 */
@@ -1007,6 +1012,10 @@ static void selfdestruct_atexit( void ) {
         }
     }
     MUTEX_UNLOCK( &selfdestruct_cs );
+
+    // Tell the timer thread to check it's cancel request
+    struct s_Linda *td = timer_deep->deep;
+    SIGNAL_ALL( &td->write_happened);
 
     // When noticing their cancel, the lanes will remove themselves from
     // the selfdestruct chain.
@@ -1934,7 +1943,12 @@ static void init_once_LOCKED( lua_State *L, volatile DEEP_PRELUDE ** timer_deep_
         *timer_deep_ref= * (DEEP_PRELUDE**) lua_touserdata( L, -1 );
         ASSERT_L( (*timer_deep_ref) && (*timer_deep_ref)->refcount==1 && (*timer_deep_ref)->deep );
 
-        lua_pop(L,1);   // we don't need the proxy
+        // The host Lua state must always have a reference to this Linda object in order for our 'timer_deep_ref' to be valid.
+        // So store a reference that we will never actually use.
+        lua_pushlightuserdata(L, (void *)init_once_LOCKED);
+        lua_insert(L, -2); // Swap key with the Linda object
+        lua_rawset(L, LUA_REGISTRYINDEX);
+
     }
   STACK_END(L,0)
 }
@@ -1944,11 +1958,6 @@ int
 __declspec(dllexport)
 #endif
 	luaopen_lanes( lua_State *L ) {
-
-    // Initialized by 'init_once_LOCKED()': the deep userdata Linda object
-    // used for timers (each lane will get a proxy to this)
-    //
-    static volatile DEEP_PRELUDE *timer_deep;  // = NULL
 
     /*
     * Making one-time initializations.
